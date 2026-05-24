@@ -1,18 +1,24 @@
 # sameh-agency
 
-A collection of [Claude Code](https://docs.claude.com/en/docs/claude-code) skills.
+Tools and extensions for [Claude Code](https://docs.claude.com/en/docs/claude-code).
 
 ## Layout
 
 ```
-skills/
+skills/                    # Claude Code skills
   <skill-name>/
     SKILL.md
+claude/
+  status-line/             # powerline-style status bar for Claude Code
 ```
 
-Each skill is a directory under `skills/` containing a `SKILL.md` with YAML frontmatter (`name`, `description`) followed by the skill body. See the [Claude Code skills docs](https://docs.claude.com/en/docs/claude-code/skills) for the format.
+## Status line
+
+`claude/status-line/` — a zero-dependency Python statusline for Claude Code (git, stacks, model, cost, context window). See [`claude/status-line/README.md`](claude/status-line/README.md) for setup. Upstream repo: [sameh-statusline](https://github.com/samehkamaleldin/sameh-statusline).
 
 ## Skills
+
+Each skill is a directory under `skills/` containing a `SKILL.md` with YAML frontmatter (`name`, `description`) followed by the skill body. See the [Claude Code skills docs](https://docs.claude.com/en/docs/claude-code/skills) for the format.
 
 ### `review-rounds`
 
