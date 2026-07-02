@@ -8,7 +8,7 @@ A single-file Python script (`statusline.py`) that renders a powerline-style sta
 
 - **Single file**: All logic lives in `statusline.py` — no packages, no modules
 - **Data flow**: stdin JSON (from Claude Code) -> detection (git/stacks/tools) -> segment groups -> ANSI render -> stdout
-- **Caching**: File-based cache at `~/.cache/sameh-statusline/` with TTL (30s general, 300s PR)
+- **Caching**: File-based cache at `~/.cache/claude-statusline/` with TTL (30s general, 300s PR)
 - **Progressive truncation**: Segments drop gracefully as terminal narrows
 
 ## Key conventions

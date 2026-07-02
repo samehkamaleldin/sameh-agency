@@ -59,6 +59,14 @@ echo -e "\ue0b6 \ue0b4 \ue0b0 \ue0a0 \uf07c \ue606 \ue718"
 
 You should see: rounded half-circles, a triangle, a branch symbol, a folder, a Python logo, and a Node.js logo. If you see boxes or question marks, your terminal is not using a Nerd Font.
 
+### Git
+
+The **Project**, **Branch**, **Git Health**, **Stash**, **Worktree**, and **PR** segments all read git state via `git`. Without git installed — or when the working directory isn't a git repository — those segments are simply omitted and the rest of the bar still renders. Comes pre-installed on macOS and most Linux distributions.
+
+### 256-color terminal
+
+Colors use the 256-color palette (not truecolor), so a 256-color-capable terminal is expected. Any modern terminal emulator qualifies.
+
 ### `gh` CLI (optional)
 
 Enables PR status detection (draft, open, approved, changes requested, merged). Install with `brew install gh` and authenticate with `gh auth login`.

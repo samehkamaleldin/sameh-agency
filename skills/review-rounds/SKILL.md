@@ -9,6 +9,12 @@ Iteratively harden recent changes by running multiple rounds of parallel reviews
 
 The default target is **recent work on this branch** — uncommitted changes plus the last few commits — and the default lens is a bluntly critical audit for **slop, over-engineering, complexity, duplication, security, and performance**. This skill exists to clean up the kind of low-quality accretion that builds up during feature work.
 
+## Requirements
+
+- **Claude Code with subagent support** — reviewers and the fixer each run as an `Agent` subagent (unless the user passes `subagents=off`).
+- **Model access to `opus`** — all reviewer and fixer subagents run on Opus.
+- **`git`** — each round branches, stashes, tags, and merges into `base`; nothing is ever pushed.
+
 ## When to Use
 
 - User says `/review-rounds` (with or without arguments)

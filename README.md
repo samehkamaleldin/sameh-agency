@@ -12,6 +12,40 @@ claude/
   status-line/             # powerline-style status bar for Claude Code
 ```
 
+## Requirements
+
+Everything here runs inside [Claude Code](https://docs.claude.com/en/docs/claude-code) — set that up first. Each component then has its own prerequisites.
+
+### `review-rounds` skill
+
+| Requirement | Why | Required |
+|-------------|-----|----------|
+| Claude Code with subagent (`Agent`) support | Reviewers and the fixer run as parallel subagents | Yes\* |
+| Model access to **`opus`** | All reviewer and fixer subagents run on Opus | Yes\* |
+| `git` | Each round branches, stashes, tags, and merges — nothing is pushed | Yes |
+| A project check command (typecheck / tests) | Powers the regression gate that halts a round if a fix breaks the build | Optional — auto-detected, skipped if none found |
+
+> \* Default (subagent) mode. Running `/review-rounds subagents=off` executes the reviewers and fixer inline on your session model — no subagent support or Opus access required.
+
+### Status line
+
+| Requirement | Why | Required |
+|-------------|-----|----------|
+| **Python 3.10+** | Runs `statusline.py` — stdlib only, zero pip installs | Yes |
+| A **Nerd Font**, set as your terminal font | Every icon (git, language logos, powerline caps) is a Nerd Font glyph; without one you get missing-glyph boxes | Yes |
+| A 256-color terminal | The palette uses 256-color indices | Yes (any modern terminal) |
+| `git` | Drives the project / branch / git-health segments | For the git segments |
+| `gh` CLI, authenticated | PR-status segment (draft / open / approved / merged) | Optional |
+| `node` · `go` · `rustc` · `ruby` · `python3` on `PATH` | Adds version numbers to stack badges; absence just omits the version | Optional |
+
+Install a Nerd Font (macOS):
+
+```bash
+brew install font-hack-nerd-font   # or font-fira-code-nerd-font, font-jetbrains-mono-nerd-font
+```
+
+Then select the Nerd Font variant in your terminal's font settings. Per-OS instructions and a glyph self-test are in [`claude/status-line/README.md`](claude/status-line/README.md#nerd-font-required).
+
 ## Status line
 
 `claude/status-line/` — a zero-dependency Python statusline for Claude Code (git, stacks, model, cost, context window). See [`claude/status-line/README.md`](claude/status-line/README.md) for setup. Upstream repo: [sameh-statusline](https://github.com/samehkamaleldin/sameh-statusline).
@@ -31,7 +65,8 @@ Trigger: `/review-rounds`, "run review rounds", "do N rounds of review", "multi-
 Symlink any skill into your Claude Code skills directory:
 
 ```bash
-git clone https://github.com/sameh/sameh-agency.git
+git clone https://github.com/samehkamaleldin/sameh-agency.git
+mkdir -p ~/.claude/skills   # create it if this is a fresh Claude Code install
 ln -s "$PWD/sameh-agency/skills/review-rounds" ~/.claude/skills/review-rounds
 ```
 
