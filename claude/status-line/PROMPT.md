@@ -32,3 +32,7 @@ to ~/.claude/statusline.py, make it executable, and add this to my ~/.claude/set
   "statusLine": {"type": "command", "command": "python3 ~/.claude/statusline.py"}
 Then tell me to restart Claude Code.
 ```
+
+---
+
+**On Windows:** tell Claude Code to use `%USERPROFILE%\.claude` instead of `~/.claude`, the `py -3` (or `python`) launcher instead of `python3`, and an absolute path in the command — or just run `install.ps1` (see the README). Claude Code adapts these steps to your OS.

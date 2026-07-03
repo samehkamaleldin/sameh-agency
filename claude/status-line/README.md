@@ -49,7 +49,13 @@ Install any Nerd Font patched variant and set it as your terminal font:
 | [FiraCode Nerd Font](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/FiraCode) | `brew install font-fira-code-nerd-font` |
 | [JetBrains Mono Nerd Font](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/JetBrainsMono) | `brew install font-jetbrains-mono-nerd-font` |
 
-> **Tip:** On macOS, tap the cask first: `brew tap homebrew/cask-fonts` (may not be needed on newer Homebrew versions). On Linux, download from [nerdfonts.com/font-downloads](https://www.nerdfonts.com/font-downloads) and install to `~/.local/share/fonts/`. Then select the Nerd Font variant in your terminal emulator's font settings.
+Per-OS notes:
+
+- **macOS:** use the `brew install …` commands above. (Older Homebrew may first need `brew tap homebrew/cask-fonts`.)
+- **Linux:** download a patched font from [nerdfonts.com/font-downloads](https://www.nerdfonts.com/font-downloads), unzip it into `~/.local/share/fonts/`, then run `fc-cache -f`.
+- **Windows:** with [Scoop](https://scoop.sh) run `scoop bucket add nerd-fonts; scoop install Hack-NF` — or download from [nerdfonts.com](https://www.nerdfonts.com/font-downloads), select the `.ttf` files, and right-click → **Install**.
+
+Then select the Nerd Font variant in your terminal emulator's font settings.
 
 To verify your font has Nerd Font glyphs, run:
 
@@ -73,15 +79,25 @@ Enables PR status detection (draft, open, approved, changes requested, merged). 
 
 ## Installation
 
-### Quick Install (recommended)
+### Quick Install — macOS / Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/samehkamaleldin/sameh-statusline/main/install.sh | bash
 ```
 
-This downloads `statusline.py` to `~/.claude/` and configures `settings.json` automatically.
+Downloads `statusline.py` to `~/.claude/` and configures `settings.json` automatically.
 
-### pip Install
+### Quick Install — Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/samehkamaleldin/sameh-statusline/main/install.ps1 | iex
+```
+
+Downloads `statusline.py` to `%USERPROFILE%\.claude\` and wires up `settings.json`. It auto-detects the `py -3`/`python` launcher (Windows has no `python3`) and writes an absolute path into the command. Prefer this or the pip install over the manual steps below, whose `~` paths and `python3`/`chmod` are Unix-only.
+
+### pip Install — any platform
+
+The most portable option — pip creates a `sameh-statusline` launcher (a `.exe` shim on Windows), so the same `settings.json` works on every OS:
 
 ```bash
 pip install sameh-statusline

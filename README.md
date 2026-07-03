@@ -62,19 +62,25 @@ Trigger: `/review-rounds`, "run review rounds", "do N rounds of review", "multi-
 
 ## Install
 
-Symlink any skill into your Claude Code skills directory:
+**macOS / Linux** — clone, then symlink the skill into your Claude Code skills directory (or `cp -r` to copy instead):
 
 ```bash
 git clone https://github.com/samehkamaleldin/sameh-agency.git
 mkdir -p ~/.claude/skills   # create it if this is a fresh Claude Code install
 ln -s "$PWD/sameh-agency/skills/review-rounds" ~/.claude/skills/review-rounds
+# to copy instead of symlinking: cp -r sameh-agency/skills/review-rounds ~/.claude/skills/
 ```
 
-Or copy if you'd rather not symlink:
+**Windows (PowerShell)** — clone, then copy (or symlink, which needs Developer Mode or an elevated shell):
 
-```bash
-cp -r sameh-agency/skills/review-rounds ~/.claude/skills/
+```powershell
+git clone https://github.com/samehkamaleldin/sameh-agency.git
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
+Copy-Item -Recurse .\sameh-agency\skills\review-rounds "$HOME\.claude\skills\"
+# to symlink instead: New-Item -ItemType SymbolicLink -Path "$HOME\.claude\skills\review-rounds" -Target (Resolve-Path .\sameh-agency\skills\review-rounds)
 ```
+
+> On Windows, [WSL](https://learn.microsoft.com/windows/wsl/) or Git Bash lets you run the macOS / Linux commands as-is.
 
 Restart Claude Code (or start a new session) to pick up the new skill.
 
