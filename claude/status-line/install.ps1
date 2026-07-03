@@ -13,7 +13,11 @@ $ErrorActionPreference = 'Stop'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
 $RepoRaw      = 'https://raw.githubusercontent.com/samehkamaleldin/sameh-statusline/main'
-$InstallDir   = Join-Path $HOME '.claude'
+# Match Claude Code's config location: it uses os.homedir() == %USERPROFILE% on
+# Windows, which can differ from PowerShell 5.1's $HOME (HOMEDRIVE+HOMEPATH) on
+# roaming/enterprise profiles. Fall back to $HOME on non-Windows pwsh.
+$HomeDir      = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+$InstallDir   = Join-Path $HomeDir '.claude'
 $ScriptName   = 'statusline.py'
 $ScriptPath   = Join-Path $InstallDir $ScriptName
 $SettingsFile = Join-Path $InstallDir 'settings.json'
@@ -28,17 +32,25 @@ foreach ($cand in @(
         @{ Exe = 'py';      Pre = @('-3') },
         @{ Exe = 'python';  Pre = @() },
         @{ Exe = 'python3'; Pre = @() })) {
-    if (Get-Command $cand.Exe -ErrorAction SilentlyContinue) {
+    if (-not (Get-Command $cand.Exe -ErrorAction SilentlyContinue)) { continue }
+    # A <3.10 interpreter exits non-zero on purpose; PowerShell 7.4+ turns a
+    # non-zero native exit into a terminating error (ErrorActionPreference=Stop),
+    # so probe inside try/catch and just fall through to the next candidate.
+    $ok = $false
+    try {
         $checkArgs = @($cand.Pre) + @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)')
         & $cand.Exe @checkArgs 2>$null
-        if ($LASTEXITCODE -eq 0) { $python = $cand; break }
+        $ok = ($LASTEXITCODE -eq 0)
+    } catch {
+        $ok = $false
     }
+    if ($ok) { $python = $cand; break }
 }
 
 if (-not $python) {
     Write-Fail 'Python 3.10+ is required but was not found (tried: py -3, python, python3).'
     Write-Fail 'Install it from https://www.python.org/downloads/ or run: winget install Python.Python.3.12'
-    exit 1
+    throw 'Python 3.10+ not found.'
 }
 
 $PythonCmd = (@($python.Exe) + $python.Pre) -join ' '
@@ -60,8 +72,7 @@ if (Test-Path $SettingsFile) {
         $raw = Get-Content -Raw -Path $SettingsFile
         $settings = if ([string]::IsNullOrWhiteSpace($raw)) { [pscustomobject]@{} } else { $raw | ConvertFrom-Json }
     } catch {
-        Write-Fail "Could not parse $SettingsFile as JSON. Fix or remove it, then re-run."
-        exit 1
+        throw "Could not parse $SettingsFile as JSON. Fix or remove it, then re-run."
     }
     if ($settings.PSObject.Properties.Name -contains 'statusLine') {
         Write-Info 'statusLine already configured — updating command.'
