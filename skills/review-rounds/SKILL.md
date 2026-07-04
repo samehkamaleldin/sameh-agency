@@ -11,7 +11,7 @@ The default target is **recent work on this branch** — uncommitted changes plu
 
 ## Requirements
 
-- **Claude Code with subagent support** — reviewers and the fixer each run as an `Agent` subagent (unless the user passes `subagents=off`).
+- **Claude Code with subagent support** — reviewers and the fixer each run as a plain, single-shot `Agent` subagent (unless the user passes `subagents=off`). This skill uses the `Agent` tool **only**: never the `Workflow` tool, the `team-review`/`team-debug`/`team-implement` skills, FleetView teams, `SendMessage`, or worktree isolation. Reviewers are stateless subagents you dispatch and collect — not a coordinated team.
 - **Model access to `opus`** — all reviewer and fixer subagents run on Opus.
 - **`git`** — each round branches, stashes, tags, and merges into `base`; nothing is ever pushed.
 
@@ -120,7 +120,7 @@ For rounds 2..N, the base already contains prior-round merges, so no stash handl
 
 ### Step 2 — Dispatch reviewer subagents in parallel
 
-**Dispatch all M reviewers in a single message with multiple `Agent` tool calls.** Every reviewer gets:
+**Dispatch all M reviewers in a single message with multiple `Agent` tool calls** — plain, stateless, one-shot subagents that each return a findings table. They run concurrently; you collect their returned tables and compile. Do **not** wrap this in the `Workflow` tool, the `team-review`/`team-*` skills, or a FleetView "team": no named long-lived agents you `SendMessage` back and forth, no cross-agent chat, no `isolation: "worktree"`. Dispatch → collect → compile is the entire mechanism. Every reviewer gets:
 
 - `subagent_type`: `general-purpose`
 - `model`: `"opus"` — always
@@ -196,6 +196,8 @@ Recurring issues from prior rounds (round 2+ only — empty in round 1):
  with severity bumped one level — a recurrence is worse than a first sighting.">
 
 Ground rules:
+- You are a single-shot reviewer subagent: read the code, report findings, and return.
+  Do NOT spawn your own subagents, teams, or workflows — just review and return your table.
 - Report ONLY material issues grounded in code you actually read through your lens.
 - Do NOT report taste/style preferences. Do NOT speculate about files you didn't open.
 - Be blunt. The user explicitly wants slop, over-engineering, and accidental
@@ -256,6 +258,8 @@ You are the fixer for round <N>. Work through the fix todo list at .review-round
 
 Scope: <scope — recent changes only, same file list the reviewers got>
 Rules:
+- You are a single-shot fixer subagent: apply the fixes and return. Do NOT spawn your
+  own subagents, teams, or workflows.
 - Prefer deletion over addition. Most items in this list are slop, over-engineering,
   or complexity — the fix is usually to REMOVE code, not add more. If a suggested
   fix adds abstraction, question it.
@@ -407,6 +411,7 @@ When stopping for any of the above, report clearly: which round, which step, wha
 - **Never skip the merge.** Each round ends with a merge, even if clean (empty commit preserves the cadence).
 - **Always Opus for every subagent.** Pass `model: "opus"` on every `Agent` invocation in this skill.
 - **Always subagents.** Reviewers AND fixers run as subagents — never inline by the controller. Only exception: explicit user opt-out (`subagents=off`).
+- **Plain subagents, never a team.** Dispatch reviewers and the fixer with the `Agent` tool only, as stateless one-shot calls whose returned text you collect. Never route this skill through the `Workflow` tool, the `team-review`/`team-debug`/`team-implement` skills, or FleetView team orchestration (named long-lived agents, `SendMessage`, cross-agent chat, `isolation: "worktree"`). Dispatch → collect → compile. Anything fancier causes runaway agent sprawl and is out of scope.
 - **Always commit, always merge, every round.** Clean round → empty commit + merge. Regressing round → reset and stop, do NOT merge. No round produces a silent no-op.
 - **Always report after merge.** Step 6b runs every round, before looping. The user's only feedback channel during an auto run is these reports.
 - **Reviewers get no memory of prior rounds** *except* the explicit `recurrence.json` injection (Step 2). Don't paste prior reviewer findings into their prompt — only the recurrence keys with file/line/lens. Independence on everything else is the point.
@@ -423,6 +428,7 @@ When stopping for any of the above, report clearly: which round, which step, wha
 | "I'll push since I'm done anyway" | No. Pushing is never in scope for this skill. |
 | "The round was clean, skip the merge" | No. Empty commit + merge maintains history parity. |
 | "The fix is small, I'll just edit directly instead of dispatching a subagent" | No. Subagents are mandatory unless the user opted out. Keeps controller context lean. |
+| "I'll orchestrate the reviewers as a team / with the Workflow tool / FleetView" | No. Plain one-shot `Agent` subagents only — dispatch, collect, compile. No teams, no `SendMessage`, no `Workflow`, no worktree isolation. That sprawl is exactly what this skill avoids. |
 | "Checks failed after the fix but it's probably unrelated, merge anyway" | No. Regression gate failure = reset + stop. The fixer touched recent code; new failures are on it until proven otherwise. |
 | "Skip the per-round report to save tokens" | No. Reports are the user's only window into an auto run. Truncate aggressively if needed, but always post. |
 | "Pass prior round findings to this round's reviewers so they don't miss anything" | No, with one exception: the `recurrence.json` keys go in. Full prior findings would bias reviewer independence. |
