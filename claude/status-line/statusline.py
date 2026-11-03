@@ -186,6 +186,7 @@ _GIT_HOSTS: list[tuple[str, str, int]] = [
 TIMEOUT_DEFAULT = 0.5
 TIMEOUT_FAST    = 0.3
 TIMEOUT_GIT_STATUS = 0.8
+TIMEOUT_GIT = 1.5  # Windows process spawn can be slow; avoid flicker to 'no git'
 
 # =============================================================================
 # Nerd Font v3 / Powerline glyphs
@@ -280,6 +281,9 @@ class GitInfo:
     is_bare:     bool = False
     worktree_name: str = ""
     last_commit_ts: int = 0
+    detached: bool = False
+    common_dir: str = ""
+    toplevel: str = ""
 
 
 # =============================================================================
@@ -391,91 +395,38 @@ _RE_INSERTIONS = re.compile(r"(\d+) insertion")
 _RE_DELETIONS  = re.compile(r"(\d+) deletion")
 
 def get_git_info(cwd: str) -> Optional[GitInfo]:
-    """Parse git state from the working directory. Handles normal repos, worktrees, and bare repos."""
-    # Check if we're inside a git repo at all
-    git_dir = _run(["git", "--no-optional-locks", "rev-parse", "--git-dir"], cwd=cwd, timeout=TIMEOUT_FAST)
-    if not git_dir:
+    """Lightweight git info: repo/branch/worktree only. No status/diff/stash (fast on huge repos)."""
+    out = _run(["git", "--no-optional-locks", "rev-parse", "--path-format=absolute",
+                "--git-dir", "--git-common-dir", "--is-bare-repository"],
+               cwd=cwd, timeout=TIMEOUT_GIT)
+    lines = out.splitlines() if out else []
+    if len(lines) < 3:
         return None
-
+    gd, gc = os.path.normpath(lines[0]), os.path.normpath(lines[1])
     info = GitInfo()
+    info.is_bare = lines[2] == "true"
+    info.common_dir = gc
 
-    # Detect bare repo — git status doesn't work in bare repos
-    is_bare = _run(["git", "--no-optional-locks", "rev-parse", "--is-bare-repository"], cwd=cwd, timeout=TIMEOUT_FAST) == "true"
-    info.is_bare = is_bare
+    # Branch: read HEAD directly (no subprocess; works on unborn branches too)
+    branch = ""
+    try:
+        head = (Path(gd) / "HEAD").read_text(encoding="utf-8", errors="replace").strip()
+        if head.startswith("ref: "):
+            ref = head[5:]
+            branch = ref[11:] if ref.startswith("refs/heads/") else ref
+        elif head:
+            branch = head[:7]  # detached
+            info.detached = True
+    except OSError:
+        pass
+    info.branch = _sanitize(branch or "HEAD")
 
-    if is_bare:
-        # Bare repo: only branch + last commit available (no working tree)
-        info.branch = _sanitize(
-            _run(["git", "--no-optional-locks", "symbolic-ref", "--short", "HEAD"], cwd=cwd, timeout=TIMEOUT_FAST)
-            or "HEAD"
-        )
-    else:
-        # Normal/worktree repo: full porcelain v2 parse
-        raw = _run(
-            ["git", "--no-optional-locks", "status", "--branch", "--porcelain=v2",
-             "--untracked-files=normal"],
-            cwd=cwd, timeout=TIMEOUT_GIT_STATUS,
-        )
-        if not raw:
-            return None
-
-        for line in raw.splitlines():
-            if line.startswith("# branch.head "):
-                info.branch = _sanitize(line[14:])
-                if info.branch == "(detached)":
-                    info.branch = _run(
-                        ["git", "--no-optional-locks", "rev-parse", "--short", "HEAD"],
-                        cwd=cwd, timeout=TIMEOUT_FAST,
-                    ) or "HEAD"
-            elif line.startswith("# branch.ab "):
-                info.has_upstream = True
-                parts = line.split()
-                try:
-                    info.ahead = int(parts[2].lstrip("+"))
-                    info.behind = abs(int(parts[3].lstrip("-")))
-                except (ValueError, IndexError):
-                    pass
-            elif line.startswith("1 ") or line.startswith("2 "):
-                xy = line.split()[1] if len(line.split()) > 1 else ""
-                if len(xy) >= 2:
-                    if xy[0] in "MADRCU":
-                        info.staged += 1
-                    if xy[1] in "MD":
-                        info.modified += 1
-            elif line.startswith("? "):
-                info.untracked += 1
-
-        # Worktree detection: git-dir vs common-dir
-        git_common = _run(["git", "--no-optional-locks", "rev-parse", "--git-common-dir"], cwd=cwd, timeout=TIMEOUT_FAST)
-        if git_dir and git_common and os.path.abspath(git_common) != os.path.abspath(git_dir):
-            info.is_worktree = True
-            info.worktree_name = Path(git_dir).name
-
-        # Diff stats (insertions/deletions) — not available in porcelain v2
-        stat = _run(["git", "--no-optional-locks", "diff", "--shortstat"], cwd=cwd)
-        stat_staged = _run(["git", "--no-optional-locks", "diff", "--cached", "--shortstat"], cwd=cwd)
-        for diff_output in (stat, stat_staged):
-            match_ins = _RE_INSERTIONS.search(diff_output)
-            match_del = _RE_DELETIONS.search(diff_output)
-            if match_ins:
-                info.insertions += int(match_ins.group(1))
-            if match_del:
-                info.deletions += int(match_del.group(1))
-
-        info.dirty = bool(info.staged or info.modified or info.untracked)
-
-    # Last commit timestamp (works in both bare and normal repos)
-    ts_str = _run(["git", "--no-optional-locks", "log", "-1", "--format=%ct"], cwd=cwd, timeout=TIMEOUT_FAST)
-    if ts_str:
-        try:
-            info.last_commit_ts = int(ts_str)
-        except ValueError:
-            pass
-
-    # Stash count (works in both bare and normal repos)
-    stash_out = _run(["git", "--no-optional-locks", "stash", "list", "--format=%H"], cwd=cwd, timeout=TIMEOUT_FAST)
-    if stash_out:
-        info.stash = len(stash_out.splitlines())
+    if not info.is_bare and os.path.normcase(gd) != os.path.normcase(gc):
+        info.is_worktree = True
+        info.worktree_name = _sanitize(Path(gd).name)
+    if not info.is_bare:
+        info.toplevel = _run(["git", "--no-optional-locks", "rev-parse", "--show-toplevel"],
+                             cwd=cwd, timeout=TIMEOUT_GIT)
     return info
 
 
@@ -958,14 +909,18 @@ def _git_host_info(git: Optional[GitInfo], cwd: str) -> tuple[str, int, str]:
     """Return (icon, color, repo_name) based on git remote."""
     if not git:
         return (Icon.FOLDER, COLOR_HOST_ICON, "")
-    remote = _run(["git", "--no-optional-locks", "remote", "get-url", "origin"], cwd=cwd, timeout=TIMEOUT_FAST)
+    remote = _run(["git", "--no-optional-locks", "remote", "get-url", "origin"], cwd=cwd, timeout=TIMEOUT_GIT)
     if not remote:
         return (Icon.GIT_LOCAL, COLOR_BRANCH, "")
     repo_name = ""
     r = remote.rstrip("/")
     if r.endswith(".git"):
         r = r[:-4]
-    if ":" in r and "@" in r:
+    rlow = r.lower()
+    if "/_git/" in r or "dev.azure.com" in rlow or "visualstudio.com" in rlow:
+        # Azure DevOps: .../<project>/_git/<repo> or ssh v3/<org>/<project>/<repo>
+        repo_name = r.split("/")[-1]
+    elif ":" in r and "@" in r:
         repo_name = r.split(":")[-1]
     else:
         parts = r.split("/")
@@ -1022,8 +977,10 @@ def build_project_group(name: str, git: Optional[GitInfo], cwd: str = "",
             prefix_styled  = f"\x1b[38;5;{COLOR_MUTED}m\U0001F333 BARE "
             prefix_visible = "\U0001F333 BARE "
         elif git.is_worktree:
-            prefix_styled  = f"\x1b[38;5;{COLOR_WORKTREE}m{Icon.WORKTREE} "
-            prefix_visible = f"{Icon.WORKTREE} "
+            wt = git.worktree_name if git.worktree_name != git.branch.split("/")[-1] else ""
+            wt_txt = f"{wt} " if wt else ""
+            prefix_styled  = f"\x1b[38;5;{COLOR_WORKTREE}m{Icon.WORKTREE} {wt_txt}"
+            prefix_visible = f"{Icon.WORKTREE} {wt_txt}"
 
         # Commit age
         age_styled = age_visible = ""
@@ -1036,58 +993,12 @@ def build_project_group(name: str, git: Optional[GitInfo], cwd: str = "",
         styled  += f" {sep} {prefix_styled}\x1b[38;5;{COLOR_BRANCH}m{Icon.BRANCH} \x1b[38;5;{COLOR_PILL_TEXT}m{_sanitize(git.branch)}{age_styled}"
         visible += f" \ue0b1 {prefix_visible}{Icon.BRANCH} {git.branch}{age_visible}"
 
-        # Sync: ⇡n ⇣n / cloud-check (synced) / git-local (no upstream)
-        if git.ahead or git.behind:
-            if git.ahead:
-                styled  += f" \x1b[38;5;{COLOR_GIT_CLEAN}m{Icon.AHEAD}{git.ahead}"
-                visible += f" {Icon.AHEAD}{git.ahead}"
-            if git.behind:
-                styled  += f" \x1b[38;5;{COLOR_GIT_BEHIND}m{Icon.BEHIND}{git.behind}"
-                visible += f" {Icon.BEHIND}{git.behind}"
-        elif git.has_upstream:
-            styled  += f" \x1b[38;5;{COLOR_GIT_CLEAN}m{Icon.GIT_SYNCED}"
-            visible += f" {Icon.GIT_SYNCED}"
-        else:
-            # No upstream tracking
-            styled  += f" \x1b[38;5;{COLOR_GIT_DELETIONS}m\U000F0164"
-            visible += " \U000F0164"
-
-        # Stash count
-        if git.stash:
-            styled  += f" \x1b[38;5;{COLOR_GIT_STASH}m{Icon.STASH} {git.stash}"
-            visible += f" {Icon.STASH} {git.stash}"
-
-        # Health: dirty = staged | modified | untracked (see GitInfo.dirty)
-        if git.dirty:
-            styled  += f" \x1b[38;5;{COLOR_GIT_DIRTY}m{Icon.GIT_DIRTY}"
-            visible += f" {Icon.GIT_DIRTY}"
-        else:
-            styled  += f" \x1b[38;5;{COLOR_GIT_CLEAN}m{Icon.GIT_CLEAN}"
-            visible += f" {Icon.GIT_CLEAN}"
-
         # PR status
         if pr_info:
             pr_styled, pr_visible = _pr_indicator(pr_info)
             styled  += pr_styled
             visible += pr_visible
 
-        # File stats (staged, modified, untracked, +/-)
-        stat_items: list[tuple[int, str]] = []
-        if git.staged:
-            stat_items.append((COLOR_GIT_STAGED,     f"{Icon.STAGED}{git.staged}"))
-        if git.modified:
-            stat_items.append((COLOR_GIT_DIRTY,      f"{Icon.MODIFIED}{git.modified}"))
-        if git.untracked:
-            stat_items.append((COLOR_GIT_STASH,      f"{Icon.UNTRACKED}{git.untracked}"))
-        if git.insertions:
-            stat_items.append((COLOR_GIT_INSERTIONS,  f"+{git.insertions}"))
-        if git.deletions:
-            stat_items.append((COLOR_GIT_DELETIONS,   f"-{git.deletions}"))
-        if stat_items:
-            stats_styled  = " ".join(f"\x1b[38;5;{fg}m{txt}" for fg, txt in stat_items)
-            stats_visible = " ".join(txt for _, txt in stat_items)
-            styled  += f" {sep} {stats_styled}"
-            visible += f" \ue0b1 {stats_visible}"
     else:
         # No git — fallback indicator
         styled  += f" {sep} \x1b[38;5;{COLOR_SEPARATOR}m{Icon.NO_GIT}"
@@ -1354,11 +1265,11 @@ def build_cwd_group(cwd: str, repo_root: str) -> list[Segment]:
         # Try to show relative path from root
         try:
             rel = cwd_resolved.relative_to(root_resolved)
-            label = str(rel)
+            label = rel.as_posix()
         except ValueError:
             # cwd is outside the repo — show parent/dirname
             parts = cwd_resolved.parts
-            label = str(Path(*parts[-2:])) if len(parts) >= 2 else cwd_resolved.name
+            label = Path(*parts[-2:]).as_posix() if len(parts) >= 2 else cwd_resolved.name
     except OSError:
         return []
     return [_pill(_DEFAULT_BG, COLOR_MUTED, COLOR_PILL_TEXT, "\uf07c", _sanitize(label))]
@@ -1446,6 +1357,10 @@ def _total_width(gs: list[list[Segment]]) -> int:
 
 def main() -> None:
     try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    try:
         data: dict = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError, EOFError):
         sys.exit(0)
@@ -1459,6 +1374,11 @@ def main() -> None:
 
         cwd          = current_dir or project_dir or os.getcwd()
         project_name = Path(cwd).name if cwd else Path(project_dir).name
+        git = get_git_info(cwd)
+        if git and git.common_dir:
+            cdir = Path(git.common_dir)
+            base = cdir.parent.name if cdir.name == ".git" else cdir.name
+            project_name = base[:-4] if base.endswith(".git") else base
 
         # Terminal width for responsive truncation
         try:
@@ -1466,14 +1386,9 @@ def main() -> None:
         except OSError:
             term_width = int(os.environ.get("COLUMNS", DEFAULT_TERM_WIDTH))
 
-        # Always-live data (changes between prompts)
-        git = get_git_info(cwd)
 
         # Repo root for cwd indicator (git toplevel or project_dir fallback)
-        repo_root = _run(
-            ["git", "--no-optional-locks", "rev-parse", "--show-toplevel"],
-            cwd=cwd, timeout=TIMEOUT_FAST,
-        ) if git else project_dir
+        repo_root = (git.toplevel if git else "") or project_dir
 
         # Cacheable data (stacks, tools, remote, PR — stable between prompts)
         cache = _load_cache(cwd)
